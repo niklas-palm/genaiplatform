@@ -41,7 +41,8 @@ deploy: ## Deploys the artifacts from the previous build
 		--parameter-overrides \
 			IMAGE=$(IMAGE) \
 			SERVICENAME=$(SERVICE_NAME) \
-			ENVIRONMENT=$(ENVIRONMENT)
+			ENVIRONMENT=$(ENVIRONMENT) \
+			NAMESPACE=$(NAMESPACE)
 
 delete: ## Deletes the CloudFormation stack
 	@echo "Deleting stack $(STACKNAME) from region $(REGION)..."
