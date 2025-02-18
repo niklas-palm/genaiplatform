@@ -58,7 +58,7 @@ Resources:
   ServiceLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /ecs/${NAMESPACE}-logs
+      LogGroupName: !Sub /ecs/${NAMESPACE}/${SERVICENAME}-logs
       RetentionInDays: 7
 
   # Service abstraction. How to deploy the task, scale it etc.
