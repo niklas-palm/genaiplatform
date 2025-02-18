@@ -73,6 +73,9 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn:
       - PublicLoadBalancer
+      - TargetGroup
+      - HTTPSListener
+      - APIKeyRule
     Properties:
       ServiceName: !Ref SERVICENAME
       Cluster: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-name}}"
