@@ -123,7 +123,7 @@ Resources:
     Properties:
       TargetType: ip
       HealthCheckIntervalSeconds: 10 # Perform healthcheck every x
-      HealthCheckPath: /healthcheck # A health check is a ping to this path
+      HealthCheckPath: /health/liveliness # A health check is a ping to this path
       HealthCheckProtocol: HTTP # Which protocol to use for the healthcheck
       HealthCheckTimeoutSeconds: 2 # If no response within x, the healthcheck fails
       HealthyThresholdCount: 2 # After x successfull healthchecks, the target is considered healthy
