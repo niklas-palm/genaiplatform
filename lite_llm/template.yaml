@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  App service, GenAI Platform
+
+Parameters:
+  ENVIRONMENT:
+    Type: String
+  IMAGE:
+    Type: String
+    Description: Container image uri.
+  SERVICENAME:
+    Type: String
+    Description: Service name
+  NAMESPACE:
+    Type: String
+    Description: Namespace name for parameters and secrets
+  CERTARN:
+    Type: String
+    Description: Certificate ARN for the domain name
+    Default: arn:aws:acm:eu-west-1:675385716628:certificate/31e818ed-4688-486d-b3b0-b09b7bcc658f
+
+Resources:
+  # Container specs and information
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: "1024"
+      Memory: "2048"
+      ContainerDefinitions:
+        - Name: !Ref SERVICENAME
+          Image: !Ref IMAGE
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ServiceLogGroup
+              awslogs-region: !Sub ${AWS::Region}
+              awslogs-stream-prefix: !Ref SERVICENAME
+          PortMappings:
+            - ContainerPort: 4000
+              HostPort: 4000
+      Family: !Sub ${SERVICENAME}-family
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+
+  # IAM Role used by the task - what AWS actions should it be able to access?
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  ServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${NAMESPACE}-logs
+      RetentionInDays: 7
+
+  # Service abstraction. How to deploy the task, scale it etc.
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - InternalLoadBalancer
+    Properties:
+      ServiceName: !Ref SERVICENAME
+      Cluster: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-name}}"
+      TaskDefinition: !Ref TaskDefinition # Which is created above
+      DeploymentConfiguration: # specifies in how large batches we can deploy new tasks. depends on deployment method.
+        MaximumPercent: 200 # When deploying, allow at most 200% of the desired task count
+        MinimumHealthyPercent: 100 # When deploying, ensure at least 50% of the desired task count is in the running state        DeploymentCircuitBreaker:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+        Alarms:
+          AlarmNames:
+            - !Ref ALB5xxErrorAlarm
+            - !Ref ALB4xxErrorAlarm
+            - !Ref RejectedConnectionsAlarm
+          Enable: true
+          Rollback: true
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 2
+      EnableECSManagedTags: false # The new ARN and resource ID format must be enabled to work with ECS managed tags.
+      HealthCheckGracePeriodSeconds: 5 # Give the container x seconds after start-up before helth-check from ALB starts coming in.
+      LaunchType: FARGATE
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroup
+          ContainerPort: 4000
+          ContainerName: !Ref SERVICENAME # From container def above
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ContainerSecGroup # SecGroup to use for the service
+          Subnets:
+            - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/public-subnet-1}}"
+            - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/public-subnet-2}}"
+      PlatformVersion: LATEST
+      SchedulingStrategy: REPLICA
+
+  # The service "ingress".
+  InternalLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internal
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: "60"
+      Subnets:
+        - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/public-subnet-1}}"
+        - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/public-subnet-2}}"
+      SecurityGroups:
+        - !Ref ALBSecGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: ip
+      HealthCheckIntervalSeconds: 10 # Perform healthcheck every x
+      HealthCheckPath: /healthcheck # A health check is a ping to this path
+      HealthCheckProtocol: HTTP # Which protocol to use for the healthcheck
+      HealthCheckTimeoutSeconds: 2 # If no response within x, the healthcheck fails
+      HealthyThresholdCount: 2 # After x successfull healthchecks, the target is considered healthy
+      Matcher:
+        HttpCode: "200-299" # Defines what is considered healthy response
+      Port: 4000 # Where do the target accept traffic?
+      Protocol: HTTP # With which protocol to route the traffic
+      UnhealthyThresholdCount: 3 # After x unsuccessful health checks, the target is considered unhealthy
+      VpcId: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-vpc-id}}"
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds # when deregistering targets, they're drained for x seconds
+          Value: "15"
+        - Key: slow_start.duration_seconds # When a new target is registered, traffic is gradually increased to that target for x seconds until it reaches it's fair share.
+          Value: "60"
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref InternalLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ALBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Accepts incoming traffic on port 4000
+      VpcId: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-vpc-id}}"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          CidrIp: 0.0.0.0/0
+
+  ContainerSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Accepts incoming only from ALB sec group
+      VpcId: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-vpc-id}}"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          SourceSecurityGroupId: !GetAtt ALBSecGroup.GroupId
+
+  ALB5xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub "High 5XX error rate for ${SERVICENAME}"
+      MetricName: HTTPCode_Target_5XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 10
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt InternalLoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+
+  ALB4xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub "High 4XX error rate for ${SERVICENAME}"
+      MetricName: HTTPCode_Target_4XX_Count
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 20
+      EvaluationPeriods: 1
+      Threshold: 2
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt InternalLoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+
+  RejectedConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub "Rejected connections for ${SERVICENAME}"
+      MetricName: RejectedConnectionCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Sum
+      Period: 20
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt InternalLoadBalancer.LoadBalancerFullName
+
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn:
+      - Service
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 2
+      ResourceId: !Join
+        - /
+        - - service
+          - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-name}}"
+          - !Ref SERVICENAME
+      RoleARN: !GetAtt AutoScalingRole.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  CPUScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${SERVICENAME}-cpu-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 70.0
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  MemoryScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${SERVICENAME}-memory-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageMemoryUtilization
+        TargetValue: 70.0
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  RequestCountScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${SERVICENAME}-request-count-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        CustomizedMetricSpecification:
+          MetricName: RequestCountPerTarget
+          Namespace: AWS/ApplicationELB
+          Dimensions:
+            - Name: TargetGroup
+              Value: !GetAtt TargetGroup.TargetGroupFullName
+          Statistic: Sum
+        TargetValue: 100.0 # Scale when average requests per target exceeds 100 per minute
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: application-autoscaling.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: demo.enpalm.se.
+      Name: !Sub "${SERVICENAME}.demo.enpalm.se."
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt InternalLoadBalancer.DNSName
+        HostedZoneId: !GetAtt InternalLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+Outputs:
+  ServiceDNSName:
+    Value: !GetAtt InternalLoadBalancer.DNSName
