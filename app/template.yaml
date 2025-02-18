@@ -33,6 +33,8 @@ Resources:
           Environment:
             - Name: "SERVICE_NAME"
               Value: !Ref SERVICENAME
+            - Name: "LITELLM_PROXY_URL"
+              Value: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/litellm-proxy-endpoint}}"
           LogConfiguration:
             LogDriver: awslogs
             Options:

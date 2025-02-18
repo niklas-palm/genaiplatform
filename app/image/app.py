@@ -4,6 +4,8 @@ from aws_lambda_powertools.metrics import MetricUnit
 import os
 from time import perf_counter
 import traceback
+import httpx
+
 
 app = FastAPI()
 
@@ -15,6 +17,9 @@ metrics = Metrics(namespace="MyBoilerPlateNamespace")
 metrics.set_default_dimensions(
     Service=os.getenv("SERVICE_NAME", "my-boilerplate-service"),
 )
+
+LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL")
+LITELLM_PROXY_KEY = ""  # No key as of yet
 
 
 @app.middleware("http")
@@ -104,3 +109,48 @@ async def hello():
 async def trigger_error():
     logger.error("About to raise an error")
     raise HTTPException(status_code=400, detail="Test error")
+
+
+@app.post("/v1/chat/completions")
+async def chat_completion(request: Request):
+    try:
+        body = await request.json()
+
+        logger.info(
+            "Forwarding chat completion request to LiteLLM proxy",
+            extra={"model": body.get("model")},
+        )
+
+        metrics.add_metric(
+            name="ChatCompletionRequests", unit=MetricUnit.Count, value=1
+        )
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{LITELLM_PROXY_URL}/v1/chat/completions",
+                json=body,
+                headers=(
+                    {"Authorization": f"Bearer {LITELLM_PROXY_KEY}"}
+                    if LITELLM_PROXY_KEY
+                    else None
+                ),
+            )
+
+            if response.status_code != 200:
+                logger.error(
+                    "LiteLLM proxy request failed",
+                    extra={
+                        "status_code": response.status_code,
+                        "response": response.text,
+                    },
+                )
+                raise HTTPException(
+                    status_code=response.status_code, detail=response.text
+                )
+
+            return response.json()
+
+    except Exception as e:
+        logger.exception("Chat completion request failed")
+        metrics.add_metric(name="ChatCompletionErrors", unit=MetricUnit.Count, value=1)
+        raise HTTPException(status_code=500, detail=str(e))
