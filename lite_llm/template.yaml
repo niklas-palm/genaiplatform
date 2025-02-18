@@ -296,17 +296,16 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole
 
-  DNSRecord:
-    Type: AWS::Route53::RecordSet
+  LiteLLMProxyEndpoint:
+    Type: AWS::SSM::Parameter
     Properties:
-      HostedZoneName: demo.enpalm.se.
-      Name: !Sub "${SERVICENAME}.demo.enpalm.se."
-      Type: A
-      AliasTarget:
-        DNSName: !GetAtt InternalLoadBalancer.DNSName
-        HostedZoneId: !GetAtt InternalLoadBalancer.CanonicalHostedZoneID
-        EvaluateTargetHealth: true
+      Name: !Sub "/${NAMESPACE}/${ENVIRONMENT}/litellm-proxy-endpoint"
+      Type: String
+      Value: !Sub "http://${InternalLoadBalancer.DNSName}"
+      Description: "Internal endpoint for the LiteLLM proxy"
 
 Outputs:
   ServiceDNSName:
     Value: !GetAtt InternalLoadBalancer.DNSName
+  SSMParameterName:
+    Value: !Ref LiteLLMProxyEndpoint
