@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/app_build_deploy.yaml"
+      - "app/**"
 
 env:
   OIDC_ROLE: arn:aws:iam::675385716628:role/GithubActionsToAssume

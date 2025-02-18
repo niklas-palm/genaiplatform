@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/litellm_build_deploy.yaml"
+      - "lite_llm/**"
 
 env:
   OIDC_ROLE: arn:aws:iam::675385716628:role/GithubActionsToAssume
