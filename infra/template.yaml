@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Core infra for GenAI Platform ECS cluster
+
+Parameters:
+  ENVIRONMENT:
+    Type: String
+  NAMESPACE:
+    Type: String
+    Description: Namespace name for parameters and secrets
+
+Resources:
+  ClusterVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.11.0.0/16
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Ref NAMESPACE
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ClusterVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - "0"
+        - !GetAZs ""
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.11.0.0/24
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - "1"
+        - !GetAZs ""
+      VpcId: !Ref ClusterVPC
+      CidrBlock: 10.11.1.0/24
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ClusterVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+
+  ClusterNameParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${NAMESPACE}/${ENVIRONMENT}/cluster-name
+      Type: String
+      Value: !Ref ECSCluster
+
+  ClusterVpcIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${NAMESPACE}/${ENVIRONMENT}/cluster-vpc-id
+      Type: String
+      Value: !GetAtt ClusterVPC.VpcId
+
+  PublicSubnet1Param:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${NAMESPACE}/${ENVIRONMENT}/public-subnet-1
+      Type: String
+      Value: !Ref PublicSubnet1
+
+  PublicSubnet2Param:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${NAMESPACE}/${ENVIRONMENT}/public-subnet-2
+      Type: String
+      Value: !Ref PublicSubnet2
+
+Outputs:
+  ClusterParam:
+    Value: !Ref ClusterNameParam
+  PubSub1Param:
+    Value: !Ref PublicSubnet1Param
+  PubSub2Param:
+    Value: !Ref PublicSubnet2Param
+  ClusterVpcIdParam:
+    Value: !Ref ClusterVpcIdParam
