@@ -73,7 +73,6 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn:
       - PublicLoadBalancer
-      - TargetGroup
       - HTTPSListener
       - APIKeyRule
     Properties:
