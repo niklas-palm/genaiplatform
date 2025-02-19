@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from aws_lambda_powertools import Metrics, Logger
 from aws_lambda_powertools.metrics import MetricUnit
+import json
 import os
 from time import perf_counter
 import traceback
@@ -115,7 +116,33 @@ async def trigger_error():
 @app.post("/v1/chat/completions")
 async def chat_completion(request: Request):
     try:
-        body = await request.json()
+        # Log request details
+        headers = dict(request.headers)
+        raw_body = await request.body()
+        logger.debug(
+            "Received request",
+            extra={
+                "headers": headers,
+                "raw_body": raw_body.decode() if raw_body else None,
+                "content_type": headers.get("content-type"),
+                "content_length": headers.get("content-length"),
+            },
+        )
+
+        if not raw_body:
+            raise HTTPException(status_code=400, detail="Empty request body")
+
+        try:
+            body = await request.json()
+        except json.JSONDecodeError as e:
+            logger.error(
+                "JSON decode error",
+                extra={
+                    "error": str(e),
+                    "raw_body": raw_body.decode() if raw_body else None,
+                },
+            )
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
 
         logger.info(
             "Forwarding chat completion request to LiteLLM proxy",
@@ -131,9 +158,9 @@ async def chat_completion(request: Request):
                 f"{LITELLM_PROXY_URL}/v1/chat/completions",
                 json=body,
                 headers=(
-                    {"Authorization": f"Bearer {LITELLM_PROXY_KEY}"}
-                    if LITELLM_PROXY_KEY
-                    else None
+                    {}
+                    if not LITELLM_PROXY_KEY
+                    else {"Authorization": f"Bearer {LITELLM_PROXY_KEY}"}
                 ),
             )
 
