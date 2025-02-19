@@ -122,7 +122,7 @@ Resources:
       Scheme: internet-facing
       LoadBalancerAttributes:
         - Key: idle_timeout.timeout_seconds
-          Value: "60"
+          Value: "125"
       Subnets:
         - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/public-subnet-1}}"
         - !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/public-subnet-2}}"
@@ -146,9 +146,9 @@ Resources:
       VpcId: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-vpc-id}}"
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds # when deregistering targets, they're drained for x seconds
-          Value: "15"
-        - Key: slow_start.duration_seconds # When a new target is registered, traffic is gradually increased to that target for x seconds until it reaches it's fair share.
           Value: "60"
+        - Key: slow_start.duration_seconds # When a new target is registered, traffic is gradually increased to that target for x seconds until it reaches it's fair share.
+          Value: "30"
 
   HTTPListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
