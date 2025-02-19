@@ -162,12 +162,12 @@ Resources:
   ALBSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Accepts incoming traffic on port 4000
+      GroupDescription: Accepts incoming traffic on port 80
       VpcId: !Sub "{{resolve:ssm:/${NAMESPACE}/${ENVIRONMENT}/cluster-vpc-id}}"
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 4000
-          ToPort: 4000
+          FromPort: 80
+          ToPort: 80
           CidrIp: 0.0.0.0/0
 
   ContainerSecGroup:
