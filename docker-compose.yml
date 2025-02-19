@@ -1,0 +1,36 @@
+version: "3"
+services:
+  app:
+    platform: linux/arm64
+    build:
+      context: ./app/image
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - LITELLM_PROXY_URL=http://litellm:4000 # Changed from localhost to service name
+    depends_on: # Add this to ensure litellm starts first
+      - litellm
+    networks: # Add this to ensure containers can communicate
+      - app-network
+
+  litellm:
+    platform: linux/arm64
+    build:
+      context: ./lite_llm/image
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - AWS_DEFAULT_REGION=${REGION}
+    networks: # Add this to ensure containers can communicate
+      - app-network
+
+networks: # Define the network
+  app-network:
+    driver: bridge
