@@ -40,8 +40,9 @@ Resources:
       RequiresCompatibilities:
         - FARGATE
       ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
 
-  # IAM Role used by the task - what AWS actions should it be able to access?
+  # IAM Role used by the task to fetch container from ECR etc.
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -54,6 +55,18 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # IAM Role used by the task itself to call AWS APIs.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
       Policies:
         - PolicyName: BedrockAccess
           PolicyDocument:
