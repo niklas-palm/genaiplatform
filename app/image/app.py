@@ -7,7 +7,9 @@ import os
 from time import perf_counter
 import traceback
 import httpx
+from httpx import TimeoutException
 
+LONG_TIMEOUT = httpx.Timeout(timeout=120.0)  # 120 seconds
 
 app = FastAPI()
 
@@ -119,7 +121,7 @@ async def chat_completion(request: Request):
         # Log request details
         headers = dict(request.headers)
         raw_body = await request.body()
-        logger.debug(
+        logger.info(
             "Received request",
             extra={
                 "headers": headers,
@@ -153,30 +155,45 @@ async def chat_completion(request: Request):
             name="ChatCompletionRequests", unit=MetricUnit.Count, value=1
         )
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{LITELLM_PROXY_URL}/v1/chat/completions",
-                json=body,
-                headers=(
-                    {}
-                    if not LITELLM_PROXY_KEY
-                    else {"Authorization": f"Bearer {LITELLM_PROXY_KEY}"}
-                ),
-            )
+        async with httpx.AsyncClient(timeout=LONG_TIMEOUT) as client:
+            try:
+                response = await client.post(
+                    f"{LITELLM_PROXY_URL}/v1/chat/completions",
+                    json=body,
+                    headers=(
+                        {}
+                        if not LITELLM_PROXY_KEY
+                        else {"Authorization": f"Bearer {LITELLM_PROXY_KEY}"}
+                    ),
+                )
 
-            if response.status_code != 200:
-                logger.error(
-                    "LiteLLM proxy request failed",
-                    extra={
-                        "status_code": response.status_code,
-                        "response": response.text,
-                    },
+                if response.status_code != 200:
+                    logger.error(
+                        "LiteLLM proxy request failed",
+                        extra={
+                            "status_code": response.status_code,
+                            "response": response.text,
+                        },
+                    )
+                    raise HTTPException(
+                        status_code=response.status_code, detail=response.text
+                    )
+
+                return response.json()
+
+            except TimeoutException as e:
+                logger.error(f"Request to LiteLLM proxy timed out: {str(e)}")
+                metrics.add_metric(
+                    name="ChatCompletionTimeouts", unit=MetricUnit.Count, value=1
                 )
                 raise HTTPException(
-                    status_code=response.status_code, detail=response.text
+                    status_code=504,
+                    detail="Gateway Timeout: The request to the language model timed out.",
                 )
 
-            return response.json()
+    except HTTPException:
+        # Re-raise HTTP exceptions (including our timeout exception)
+        raise
 
     except Exception as e:
         logger.exception("Chat completion request failed")
