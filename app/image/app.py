@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from aws_lambda_powertools import Metrics, Logger
 from aws_lambda_powertools.metrics import MetricUnit
 import os
@@ -89,7 +90,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "detail": exc.detail,
         },
     )
-    return {"error": exc.detail}, exc.status_code
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 
 @app.get("/healthcheck")
