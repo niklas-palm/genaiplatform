@@ -9,7 +9,7 @@ on:
 
 env:
   AWS_REGION: "eu-west-1"
-  OIDC_ROLE: arn:aws:iam::675385716628:role/GithubActionsToAssume
+  OIDC_ROLE: arn:aws:iam::441825564306:role/GHA_role
 
 permissions:
   id-token: write
