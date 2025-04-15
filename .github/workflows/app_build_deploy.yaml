@@ -8,7 +8,7 @@ on:
       - "app/**"
 
 env:
-  OIDC_ROLE: arn:aws:iam::675385716628:role/GithubActionsToAssume
+  OIDC_ROLE: arn:aws:iam::441825564306:role/GHA_role
   AWS_REGION: "eu-west-1" # Select this to suit where you'd like to deploy your workload
   ECR_REPOSITORY: genaiplatform/app
 permissions:
