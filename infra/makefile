@@ -10,7 +10,7 @@ help:
 .DEFAULT_GOAL := help
 
 # Environment variables with default values
-export STACKNAME ?= genaiplatform
+export STACKNAME ?= genaiplatform-base-infra
 export REGION ?= eu-west-1
 export PROJECT ?= genaiplatform
 export ENVIRONMENT ?= dev
