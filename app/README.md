@@ -22,4 +22,18 @@ This service provides the client-facing API for the GenAI Platform.
 ## Deployment
 
 Deployment is handled automatically by GitHub Actions when changes are pushed to this directory.
-The service requires the LiteLLM service to be deployed first, as it references the LiteLLM endpoint via an SSM parameter.
+
+### Prerequisites
+
+- **LiteLLM Service**: Must be deployed first, as this service references the LiteLLM endpoint via an SSM parameter.
+- **Route53 Hosted Zone**: A valid Route53 hosted zone for the domain must exist before deployment. The template creates:
+  - An SSL certificate with DNS validation
+  - DNS records pointing to the application load balancer
+  
+### Configuration
+
+The deployment uses these parameters:
+- `DomainName`: The full domain for the service (default: platform.genai.enpalm.se)
+- `HostedZoneName`: The Route53 hosted zone name with trailing dot (default: genai.enpalm.se.)
+
+If you're using a different domain, update these parameters in the CloudFormation deployment.

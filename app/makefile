@@ -19,9 +19,10 @@ export ENVIRONMENT ?= dev
 export IMAGE ?= temp # Will be replaced in CI/CD
 export DOMAINNAME ?= platform.genai.enpalm.se
 export HOSTEDZONENAME ?= genai.enpalm.se.
+export HOSTEDZONEID ?= Z018169127SNH52IY4SRT 
 
 # Mark targets that don't create files as .PHONY
-.PHONY: validate build deploy delete go 
+.PHONY: validate build deploy delete go get-api-key
 
 validate: ## Validates and lints the SAM template
 	@echo "Validating SAM template..."
@@ -46,7 +47,8 @@ deploy: ## Deploys the artifacts from the previous build
 			ENVIRONMENT=$(ENVIRONMENT) \
 			NAMESPACE=$(NAMESPACE) \
 			DOMAINNAME=$(DOMAINNAME) \
-			HOSTEDZONENAME=$(HOSTEDZONENAME) 
+			HOSTEDZONENAME=$(HOSTEDZONENAME) \
+			HOSTEDZONEID=$(HOSTEDZONEID)
 
 delete: ## Deletes the CloudFormation stack
 	@echo "Deleting stack $(STACKNAME) from region $(REGION)..."
@@ -54,5 +56,13 @@ delete: ## Deletes the CloudFormation stack
 		--stack-name $(STACKNAME) \
 		--region $(REGION) \
 		--no-prompts
+
+get-api-key: ## Retrieves and prints the API key for the application
+	@echo "Retrieving API key from AWS Secrets Manager..."
+	@aws secretsmanager get-secret-value \
+		--secret-id $(ENVIRONMENT)/$(NAMESPACE)/api \
+		--region $(REGION) \
+		--query 'SecretString' \
+		--output text | jq -r '.apikey'
 
 go: build deploy ## Build and deploys the stack

@@ -21,6 +21,9 @@ Parameters:
   HOSTEDZONENAME:
     Type: String
     Description: Route53 hosted zone name (with trailing dot)
+  HOSTEDZONEID:
+    Type: String
+    Description: ID of the hosted zone (without /hostedzone/ prefix)
 
 Resources:
   # Container specs and information
@@ -182,6 +185,17 @@ Resources:
       Protocol: HTTPS
       Certificates:
         - CertificateArn: !Ref Certificate
+
+  APIKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${ENVIRONMENT}/${NAMESPACE}/api"
+      Description: "API key for the GenAI Platform App service"
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: "apikey"
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\\'
 
   APIKeyRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
@@ -354,6 +368,9 @@ Resources:
     Properties:
       DomainName: !Ref DOMAINNAME
       ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DOMAINNAME
+          HostedZoneId: !Ref HOSTEDZONEID
       Tags:
         - Key: Name
           Value: !Sub ${NAMESPACE}-${ENVIRONMENT}-certificate
@@ -378,3 +395,9 @@ Outputs:
   ServiceURL:
     Value: !Sub https://${DOMAINNAME}
     Description: The HTTPS URL for accessing the service
+  APIKeySecretName:
+    Value: !Ref APIKeySecret
+    Description: The name of the API key secret in Secrets Manager
+  APIKeyCommand:
+    Value: !Sub "aws secretsmanager get-secret-value --secret-id ${ENVIRONMENT}/${NAMESPACE}/api --query 'SecretString' --output text | jq -r '.apikey'"
+    Description: Command to retrieve the API key

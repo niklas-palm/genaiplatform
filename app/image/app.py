@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from aws_lambda_powertools import Metrics, Logger
 from aws_lambda_powertools.metrics import MetricUnit
@@ -8,6 +8,8 @@ from time import perf_counter
 import traceback
 import httpx
 from httpx import TimeoutException
+
+from schemas import ChatCompletionRequest
 
 LONG_TIMEOUT = httpx.Timeout(timeout=120.0)  # 120 seconds
 
@@ -23,7 +25,11 @@ metrics.set_default_dimensions(
 )
 
 LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL")
-LITELLM_PROXY_KEY = ""  # No key as of yet
+if not LITELLM_PROXY_URL:
+    raise ValueError("LITELLM_PROXY_URL environment variable must be set")
+    
+# LiteLLM service API key if required - can be set via environment variable
+LITELLM_PROXY_KEY = os.getenv("LITELLM_PROXY_KEY", "")
 
 
 @app.middleware("http")
@@ -116,39 +122,25 @@ async def trigger_error():
 
 
 @app.post("/v1/chat/completions")
-async def chat_completion(request: Request):
+async def chat_completion(request: Request, chat_request: ChatCompletionRequest):
     try:
         # Log request details
         headers = dict(request.headers)
-        raw_body = await request.body()
         logger.info(
             "Received request",
             extra={
                 "headers": headers,
-                "raw_body": raw_body.decode() if raw_body else None,
                 "content_type": headers.get("content-type"),
                 "content_length": headers.get("content-length"),
+                "model": chat_request.model,
+                "temperature": chat_request.temperature,
+                "stream": chat_request.stream,
             },
         )
 
-        if not raw_body:
-            raise HTTPException(status_code=400, detail="Empty request body")
-
-        try:
-            body = await request.json()
-        except json.JSONDecodeError as e:
-            logger.error(
-                "JSON decode error",
-                extra={
-                    "error": str(e),
-                    "raw_body": raw_body.decode() if raw_body else None,
-                },
-            )
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-
         logger.info(
             "Forwarding chat completion request to LiteLLM proxy",
-            extra={"model": body.get("model")},
+            extra={"model": chat_request.model},
         )
 
         metrics.add_metric(
@@ -159,7 +151,7 @@ async def chat_completion(request: Request):
             try:
                 response = await client.post(
                     f"{LITELLM_PROXY_URL}/v1/chat/completions",
-                    json=body,
+                    json=chat_request.dict(),
                     headers=(
                         {}
                         if not LITELLM_PROXY_KEY
