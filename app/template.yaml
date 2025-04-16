@@ -194,8 +194,12 @@ Resources:
       GenerateSecretString:
         SecretStringTemplate: '{}'
         GenerateStringKey: "apikey"
-        PasswordLength: 32
-        ExcludeCharacters: '"@/\\'
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\\~`!#$%^&*()_-+={}[]|:;<>,.?'
+        ExcludePunctuation: true
+        ExcludeLowercase: false
+        ExcludeUppercase: false
+        RequireEachIncludedType: true
 
   APIKeyRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
