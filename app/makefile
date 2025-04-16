@@ -17,6 +17,8 @@ export PROJECT ?= genaiplatform
 export NAMESPACE ?= genaiplatform
 export ENVIRONMENT ?= dev
 export IMAGE ?= temp # Will be replaced in CI/CD
+export DOMAINNAME ?= platform.genai.enpalm.se
+export HOSTEDZONENAME ?= genai.enpalm.se.
 
 # Mark targets that don't create files as .PHONY
 .PHONY: validate build deploy delete go 
@@ -42,7 +44,9 @@ deploy: ## Deploys the artifacts from the previous build
 			IMAGE=$(IMAGE) \
 			SERVICENAME=$(SERVICE_NAME) \
 			ENVIRONMENT=$(ENVIRONMENT) \
-			NAMESPACE=$(NAMESPACE)
+			NAMESPACE=$(NAMESPACE) \
+			DOMAINNAME=$(DOMAINNAME) \
+			HOSTEDZONENAME=$(HOSTEDZONENAME) 
 
 delete: ## Deletes the CloudFormation stack
 	@echo "Deleting stack $(STACKNAME) from region $(REGION)..."
